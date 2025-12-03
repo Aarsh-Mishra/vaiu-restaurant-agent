@@ -2,23 +2,50 @@ import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import './App.css';
 
-// Base URL for API
+// Base URL for our Express Backend
 const API_URL = 'http://localhost:5000/api';
 
 function App() {
-  // View State: 'home' | 'chat' | 'details'
+  // --- STATE MANAGEMENT ---
+  
+  // View State: Controls which "Screen" is visible ('home' | 'chat' | 'details')
   const [view, setView] = useState('home');
+  
+  // Data State: Holds list of bookings and the currently selected one
   const [bookingsList, setBookingsList] = useState([]);
   const [selectedBooking, setSelectedBooking] = useState(null);
+  
+  // Location State: Holds user's Lat/Lon for weather API
+  const [userLocation, setUserLocation] = useState(null); 
 
-  // Chat State
+  // Chat State: Messages array, listening status, and extracted details
   const [messages, setMessages] = useState([]);
   const [isListening, setIsListening] = useState(false);
   const [bookingDetails, setBookingDetails] = useState({});
-  const [status, setStatus] = useState('idle'); 
+  const [status, setStatus] = useState('idle'); // 'idle' | 'listening' | 'processing' | 'speaking'
+  
+  // Ref to auto-scroll chat to bottom
   const chatEndRef = useRef(null);
 
-  // --- 1. Fetch Bookings (Home View) ---
+  // --- 1. Geolocation Setup (On Mount) ---
+  useEffect(() => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          // Save coordinates to state to send with chat messages later
+          setUserLocation({
+            lat: position.coords.latitude,
+            lon: position.coords.longitude
+          });
+        },
+        (error) => {
+          console.log("Location access denied or unavailable. Using server default.");
+        }
+      );
+    }
+  }, []);
+
+  // --- 2. Dashboard Logic (Fetching Data) ---
   const fetchBookings = async () => {
     try {
       const res = await axios.get(`${API_URL}/bookings`);
@@ -28,61 +55,70 @@ function App() {
     }
   };
 
+  // Refresh bookings whenever we return to the 'home' view
   useEffect(() => {
     if (view === 'home') {
       fetchBookings();
     }
   }, [view]);
 
-  // --- 2. Delete Booking ---
+  // Handle Deleting a booking
   const handleDelete = async (id, e) => {
-    e.stopPropagation();
+    e.stopPropagation(); // Prevent clicking the card behind the button
     if (!window.confirm("Are you sure you want to cancel this booking?")) return;
     try {
       await axios.delete(`${API_URL}/bookings/${id}`);
-      fetchBookings(); // Refresh list
+      fetchBookings(); // Refresh the list after deletion
     } catch (err) {
       alert("Error deleting booking");
     }
   };
 
-  // --- 3. View Details ---
+  // Switch to Details View
   const handleViewDetails = (booking) => {
     setSelectedBooking(booking);
     setView('details');
   };
 
-  // --- 4. Start New Chat Session ---
+  // --- 3. Chat Session Initialization ---
   const startNewBooking = () => {
+    // Reset conversation state
     setMessages([
       { sender: 'bot', text: "Hello! I am the Vaiu Bistro Assistant. I can help you book a table. What date and time would you like?" }
     ]);
     setBookingDetails({});
     setStatus('idle');
-    setView('chat');
+    setView('chat'); // Switch to Chat UI
   };
 
-  // --- 5. Chat & Auto-Confirm Logic ---
+  // Auto-scroll logic for chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // --- 4. Text-to-Speech (TTS) ---
   const speak = (text) => {
     if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
+    
+    window.speechSynthesis.cancel(); // Stop any current speech
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = 'en-US';
+    
     utterance.onstart = () => setStatus('speaking');
     utterance.onend = () => setStatus('idle');
+    
     window.speechSynthesis.speak(utterance);
   };
 
+  // --- 5. Speech-to-Text (STT) ---
   const startListening = () => {
+    // Check for browser support (Chrome/Edge/Safari)
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       alert("Browser does not support voice. Try Chrome.");
       return;
     }
+    
     const recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
     recognition.interimResults = false;
@@ -94,34 +130,43 @@ function App() {
     };
     recognition.onend = () => {
       setIsListening(false);
+      // Only reset status if we aren't already processing logic
       if (status === 'listening') setStatus('idle');
     };
     recognition.onresult = (event) => {
       const transcript = event.results[0][0].transcript;
       handleSendMessage(transcript);
     };
+    
     recognition.start();
   };
 
+  // --- 6. Core Chat Logic ---
   const handleSendMessage = async (userText) => {
     if (!userText.trim()) return;
 
+    // 1. Add User Message immediately
     const newMessages = [...messages, { sender: 'user', text: userText }];
     setMessages(newMessages);
     setStatus('processing');
 
     try {
+      // 2. Send to Backend with Location and History
       const response = await axios.post(`${API_URL}/chat`, {
         message: userText,
-        history: newMessages 
+        history: newMessages,
+        userLocation: userLocation // Passing location for dynamic weather
       });
 
       const aiData = response.data;
+      
+      // 3. Update UI with extraction results
       setBookingDetails(aiData.bookingDetails || {});
       setMessages(prev => [...prev, { sender: 'bot', text: aiData.reply }]);
       speak(aiData.reply);
 
-      // AUTOMATIC CONFIRMATION TRIGGER
+      // 4. CHECK FOR AUTO-CONFIRMATION
+      // If the AI sets intent to 'confirmed', we save without asking user to click a button
       if (aiData.intent === 'confirmed') {
         await handleAutoSave(aiData.bookingDetails);
       }
@@ -132,6 +177,7 @@ function App() {
     }
   };
 
+  // --- 7. Auto-Save Logic ---
   const handleAutoSave = async (details) => {
     try {
         const payload = {
@@ -145,15 +191,17 @@ function App() {
             status: "Confirmed"
         };
         
+        // POST to create booking
         await axios.post(`${API_URL}/bookings`, payload);
         
         const successMsg = "I have successfully saved your booking! Redirecting to home...";
         setMessages(prev => [...prev, { sender: 'bot', text: successMsg }]);
         speak(successMsg);
         
+        // Redirect to Home Dashboard after 4 seconds
         setTimeout(() => {
             setView('home');
-        }, 4000); // Redirect after 4 seconds
+        }, 4000); 
         
     } catch (err) {
         console.error(err);
@@ -161,8 +209,9 @@ function App() {
     }
   };
 
-  // --- RENDERERS ---
+  // --- 8. UI RENDERERS ---
 
+  // Home View: List of Bookings
   const renderHome = () => (
     <div className="home-container">
       <div className="home-header">
@@ -191,6 +240,7 @@ function App() {
     </div>
   );
 
+  // Details View: Single Booking Info
   const renderDetails = () => (
     <div className="details-container">
       <button className="back-btn" onClick={() => setView('home')}>← Back to Bookings</button>
@@ -209,6 +259,7 @@ function App() {
     </div>
   );
 
+  // Chat View: Voice Agent Interface
   const renderChat = () => (
     <div className="chat-layout">
         <div className="chat-header-bar">
@@ -216,7 +267,7 @@ function App() {
             <h3>New Booking Assistant</h3>
         </div>
         <div className="chat-workspace">
-            {/* Live Form Preview */}
+            {/* Live Data Preview Side Panel */}
             <div className="live-preview">
                 <h4>Live Details</h4>
                 <div className="preview-item">Name: {bookingDetails.name || '...'}</div>
@@ -225,7 +276,7 @@ function App() {
                 <div className="preview-item">Guests: {bookingDetails.guests || '...'}</div>
             </div>
             
-            {/* Chat Area */}
+            {/* Main Chat Area */}
             <div className="chat-box">
                 <div className="messages-area">
                     {messages.map((msg, idx) => (
@@ -235,6 +286,7 @@ function App() {
                     ))}
                     <div ref={chatEndRef} />
                 </div>
+                {/* Input Controls */}
                 <div className="input-area">
                     <button 
                         className={`mic-btn ${isListening ? 'listening' : ''}`}
@@ -256,6 +308,7 @@ function App() {
         <h1>🍽️ Vaiu Bistro</h1>
       </header>
       <main className="main-content">
+        {/* Conditional Rendering based on 'view' state */}
         {view === 'home' && renderHome()}
         {view === 'chat' && renderChat()}
         {view === 'details' && selectedBooking && renderDetails()}
