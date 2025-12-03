@@ -39,36 +39,34 @@ MONGO=your_mongodb_connection_string
 GEMINI_API_KEY=your_google_gemini_api_key
 OPENWEATHER_API_KEY=your_openweather_api_key
 
-3. Installation
+### 3. Installation
 
-Install Backend Dependencies: Open a terminal in the root folder:
-Bash
-
+**Install Backend Dependencies:**
+Open a terminal in the root folder:
+```bash
 cd server
 npm install
 
-Install Frontend Dependencies: Open a second terminal in the root folder:
-Bash
+**Install Frontend Dependencies: Open a second terminal in the root folder:**
+```Bash
 
 cd client
 npm install
 
-🏃‍♂️ How to Run
+**🏃‍♂️ How to Run**
 
 You need to run the Backend and Frontend simultaneously in two separate terminals.
 
-Terminal 1: Start Backend Server
-Bash
+**Terminal 1: Start Backend Server**
+```Bash
 
 cd server
 node index.js
 # Server will run on http://localhost:5000
 
-Terminal 2: Start Frontend Client
-Bash
+**Terminal 2: Start Frontend Client**
+```Bash
 
 cd client
 npm run dev
 # Client will run on http://localhost:5173 (or similar)
-
-Click the link shown in Terminal 2 (e.g., http://localhost:5173) to open the app in your browser.
