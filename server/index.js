@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import Booking from './models/booking.js';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 // Initialize environment variables
 dotenv.config();
 
@@ -11,16 +12,26 @@ const app = express();
 // Middleware
 app.use(express.json());
 app.use(cors());
-dotenv.config();
 
+// Connect to MongoDB
 mongoose.connect(process.env.MONGO).then(()=>{
     console.log('Connected to MongoDB!');
 }).catch((err)=>{
     console.log(err);
 })
 
+// --- 2. AI Configuration ---
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 const PORT = process.env.PORT || 5000;
+
+// (We mock this first to ensure logic works. Later we can connect a real API)
+const getWeather = async (date) => {
+  const forecasts = ['sunny', 'rainy', 'cloudy', 'clear', 'stormy'];
+  const randomCondition = forecasts[Math.floor(Math.random() * forecasts.length)];
+  return { condition: randomCondition, temp: 24 };
+};
 
 app.post('/api/bookings', async (req, res) => {
   try {
