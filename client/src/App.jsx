@@ -112,19 +112,27 @@ function App() {
   const handleConfirmBooking = async () => {
     try {
         const payload = {
+            // Standard fields
             customerName: bookingDetails.name || "Guest",
             numberOfGuests: bookingDetails.guests || 2,
             bookingDate: bookingDetails.date || new Date(),
             bookingTime: bookingDetails.time || "19:00",
-            specialRequests: bookingDetails.cuisine || "None",
+            cuisinePreference: bookingDetails.cuisine || "Any",
+            specialRequests: bookingDetails.specialRequests || "None",
+            seatingPreference: bookingDetails.seating || "Any",
+            
             status: "Confirmed"
         };
         
         const res = await axios.post('http://localhost:5000/api/bookings', payload);
         alert(`Booking Confirmed! ID: ${res.data.booking._id}`);
-        setMessages(prev => [...prev, { sender: 'bot', text: "Your booking has been officially saved to the database!" }]);
-        speak("Your booking has been officially saved to the database!");
+        
+        const successMsg = "Your booking has been officially saved!";
+        setMessages(prev => [...prev, { sender: 'bot', text: successMsg }]);
+        speak(successMsg);
+        
     } catch (err) {
+        console.error(err);
         alert("Failed to save booking");
     }
   };

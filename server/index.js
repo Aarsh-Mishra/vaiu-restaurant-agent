@@ -57,15 +57,11 @@ const getWeather = async (date) => {
 // --- 4. The "Brain" Route (AI Chat) ---
 app.post('/api/chat', async (req, res) => {
   try {
-    // 1. Get history from the frontend
-    const { message, history } = req.body; 
+    const { message, history } = req.body;
     console.log("User said:", message);
 
-    // 2. Format history into a conversation string for Gemini
-    // We filter out the very first "Hello" message to save tokens if needed
-    // format: "User: hello\nBot: hi there\nUser: ..."
+    // --- 1. Construct Context from History ---
     let conversationContext = "";
-    
     if (history && history.length > 0) {
         conversationContext = history.map(msg => {
             const role = msg.sender === 'user' ? "User" : "Agent";
@@ -73,41 +69,43 @@ app.post('/api/chat', async (req, res) => {
         }).join("\n");
     }
 
-    // 3. Updated System Prompt with Context
+    // --- 2. Improved System Prompt ---
     const systemPrompt = `
     You are a helpful restaurant booking assistant for "Vaiu Bistro".
     Today's date is ${new Date().toISOString().split('T')[0]}.
     
-    HISTORY OF CONVERSATION:
+    HISTORY:
     ${conversationContext}
     
     CURRENT USER MESSAGE: "${message}"
     
     YOUR GOAL:
-    Compare the "HISTORY" with the "CURRENT USER MESSAGE". 
-    Extract the following details if they are mentioned anywhere in the conversation or the new message:
-    - Name
-    - Date (YYYY-MM-DD)
-    - Time (24h format)
-    - Number of Guests
-    - Cuisine Preference (Default: Any)
-    - Seating Preference (Indoor/Outdoor/Any)
+    You must collect ALL of the following information. Do not confirm the booking until you have them all:
+    1. Name
+    2. Date & Time
+    3. Number of Guests
+    4. Seating Preference (Indoor/Outdoor)
+    5. Cuisine Preference (e.g., Italian, Chinese, or "Any")
+    6. Special Requests (e.g., Birthday, Allergies, or "None")
 
-    IMPORTANT: 
-    - Do NOT ask for information that is already present in the HISTORY.
-    - If the user provided "tomorrow", calculate the date based on today's date.
-    - If the user says "2 tables", assume "Guests" is missing or ask "How many people per table?"
+    INSTRUCTIONS:
+    - Compare HISTORY and CURRENT MESSAGE to find these details.
+    - If any detail is missing, ASK the user for it politely.
+    - Do not ask for details already provided.
+    - Only set "intent" to "confirmation_request" when ALL fields are collected.
     
-    Return a JSON object ONLY. NO markdown. Structure:
+    Return JSON ONLY:
     {
-      "reply": "Your natural response. Keep it brief. Only ask for missing fields.",
+      "reply": "Your response asking for missing details or confirming and don't repeat details already given.",
+
       "bookingDetails": {
         "name": "extracted or null",
-        "date": "extracted or null",
+        "date": "extracted (YYYY-MM-DD) or null",
         "time": "extracted or null",
         "guests": "extracted or null",
+        "seating": "extracted or null",
         "cuisine": "extracted or null",
-        "seating": "extracted or null"
+        "specialRequests": "extracted or null"
       },
       "intent": "booking_request" or "confirmation_request"
     }
@@ -115,28 +113,27 @@ app.post('/api/chat', async (req, res) => {
 
     const result = await model.generateContent(systemPrompt);
     const response = await result.response;
-    let text = response.text();
-    
-    // Clean up if Gemini adds markdown code blocks
-    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-    
+    let text = response.text().replace(/```json/g, '').replace(/```/g, '').trim();
     const aiData = JSON.parse(text);
 
-    // Weather Integration Logic
+    // --- 3. Smart Weather Logic (Fix Repetition) ---
     if (aiData.bookingDetails.date) {
-        const weather = await getWeather(aiData.bookingDetails.date);
+        // Check if we already told the user the weather recently
+        const lastBotMessage = history?.filter(msg => msg.sender === 'bot').pop();
+        const weatherAlreadyDiscussed = lastBotMessage?.text.toLowerCase().includes('forecast');
         
-        // If the AI didn't already mention weather, add a tip
-        if (!aiData.reply.toLowerCase().includes('weather')) {
-             aiData.reply += ` By the way, the forecast for that day is ${weather.condition}.`;
-        }
-        
-        // Suggest seating based on weather
-        if (weather.condition === 'rainy' && !aiData.bookingDetails.seating) {
-             aiData.reply += " Since it looks like rain, I'd recommend indoor seating.";
-             aiData.bookingDetails.seating = "Indoor";
-        } else if (weather.condition === 'sunny' && !aiData.bookingDetails.seating) {
-             aiData.reply += " It's going to be sunny, so outdoor seating would be lovely!";
+        // Only fetch/append weather if it's NOT in the last bot message
+        if (!weatherAlreadyDiscussed) {
+             const weather = await getWeather(aiData.bookingDetails.date);
+             // Append only if the AI didn't naturally include it in "reply"
+             if (!aiData.reply.toLowerCase().includes('weather') && !aiData.reply.toLowerCase().includes('forecast')) {
+                 aiData.reply += ` By the way, the forecast for that day is ${weather.condition}.`;
+                 
+                 // Add seating advice only if not already set
+                 if (weather.condition.includes('rain') && !aiData.bookingDetails.seating) {
+                     aiData.reply += " I recommend indoor seating.";
+                 }
+             }
         }
     }
 

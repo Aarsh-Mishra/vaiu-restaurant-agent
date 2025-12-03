@@ -32,7 +32,7 @@ const bookingSchema = new mongoose.Schema({
   },
   seatingPreference: {
     type: String,
-    enum: ['Indoor', 'Outdoor', 'Any'],
+    enum: ['Indoor', 'Outdoor', 'Any', 'indoor', 'outdoor', 'any'],
     default: 'Any',
   },
   status: {
