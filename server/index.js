@@ -33,6 +33,72 @@ const getWeather = async (date) => {
   return { condition: randomCondition, temp: 24 };
 };
 
+// --- 4. The "Brain" Route (AI Chat) ---
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { message } = req.body;
+    console.log("User said:", message);
+
+    // Prompt Engineering: Instruct Gemini to extract data
+    const systemPrompt = `
+    You are a helpful restaurant booking assistant for "Vaiu Bistro".
+    Today's date is ${new Date().toISOString().split('T')[0]}.
+    
+    Your goal is to collect: Name, Date, Time, Guests, Cuisine Preference, and Seating Preference.
+    
+    Analyze the user's latest message: "${message}"
+    
+    Return a JSON object ONLY. NO markdown formatting. Structure:
+    {
+      "reply": "Your conversational response here. If you have the date, mention the weather.",
+      "bookingDetails": {
+        "name": "extracted name or null",
+        "date": "extracted date (YYYY-MM-DD) or null",
+        "time": "extracted time (24h format) or null",
+        "guests": "extracted number or null",
+        "cuisine": "extracted cuisine or null",
+        "seating": "extracted seating (Indoor/Outdoor) or null"
+      },
+      "missingFields": ["list", "of", "fields", "still", "needed"],
+      "intent": "booking_request" or "cancellation" or "general_inquiry"
+    }
+    `;
+
+    const result = await model.generateContent(systemPrompt);
+    const response = await result.response;
+    let text = response.text();
+    
+    // Clean up if Gemini adds markdown code blocks
+    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    
+    const aiData = JSON.parse(text);
+
+    // Weather Integration Logic
+    if (aiData.bookingDetails.date) {
+        const weather = await getWeather(aiData.bookingDetails.date);
+        
+        // If the AI didn't already mention weather, add a tip
+        if (!aiData.reply.toLowerCase().includes('weather')) {
+             aiData.reply += ` By the way, the forecast for that day is ${weather.condition}.`;
+        }
+        
+        // Suggest seating based on weather
+        if (weather.condition === 'rainy' && !aiData.bookingDetails.seating) {
+             aiData.reply += " Since it looks like rain, I'd recommend indoor seating.";
+             aiData.bookingDetails.seating = "Indoor";
+        } else if (weather.condition === 'sunny' && !aiData.bookingDetails.seating) {
+             aiData.reply += " It's going to be sunny, so outdoor seating would be lovely!";
+        }
+    }
+
+    res.json(aiData);
+
+  } catch (error) {
+    console.error("AI Error:", error);
+    res.status(500).json({ error: "Failed to process request" });
+  }
+});
+
 app.post('/api/bookings', async (req, res) => {
   try {
     const bookingData = req.body;
