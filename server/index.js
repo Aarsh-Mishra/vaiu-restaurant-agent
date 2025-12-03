@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import Booking from './models/booking.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import axios from 'axios';
 // Initialize environment variables
 dotenv.config();
 
@@ -28,39 +29,87 @@ const PORT = process.env.PORT || 5000;
 
 // (We mock this first to ensure logic works. Later we can connect a real API)
 const getWeather = async (date) => {
-  const forecasts = ['sunny', 'rainy', 'cloudy', 'clear', 'stormy'];
-  const randomCondition = forecasts[Math.floor(Math.random() * forecasts.length)];
-  return { condition: randomCondition, temp: 24 };
+  try {
+    // You can hardcode a city like 'Mumbai' or 'New York' for this assignment
+    const city = 'Trichy'; 
+    const apiKey = process.env.OPENWEATHER_API_KEY; // Add this to your .env
+    
+    // Using OpenWeatherMap's 5-day forecast endpoint
+    const url = `https://api.openweathermap.org/data/2.5/forecast?q=${city}&appid=${apiKey}&units=metric`;
+    
+    const response = await axios.get(url);
+    
+    // Simple logic: Find the forecast closest to the booking date/time
+    // (For simplicity, we just grab the first forecast item here, 
+    // but in a real app, you'd filter response.data.list by date)
+    const forecast = response.data.list[0];
+    
+    return {
+      condition: forecast.weather[0].description,
+      temp: forecast.main.temp
+    };
+  } catch (error) {
+    console.error("Weather API Error:", error.message);
+    return { condition: "unknown", temp: 25 }; // Fallback if API fails
+  }
 };
 
 // --- 4. The "Brain" Route (AI Chat) ---
 app.post('/api/chat', async (req, res) => {
   try {
-    const { message } = req.body;
+    // 1. Get history from the frontend
+    const { message, history } = req.body; 
     console.log("User said:", message);
 
-    // Prompt Engineering: Instruct Gemini to extract data
+    // 2. Format history into a conversation string for Gemini
+    // We filter out the very first "Hello" message to save tokens if needed
+    // format: "User: hello\nBot: hi there\nUser: ..."
+    let conversationContext = "";
+    
+    if (history && history.length > 0) {
+        conversationContext = history.map(msg => {
+            const role = msg.sender === 'user' ? "User" : "Agent";
+            return `${role}: ${msg.text}`;
+        }).join("\n");
+    }
+
+    // 3. Updated System Prompt with Context
     const systemPrompt = `
     You are a helpful restaurant booking assistant for "Vaiu Bistro".
     Today's date is ${new Date().toISOString().split('T')[0]}.
     
-    Your goal is to collect: Name, Date, Time, Guests, Cuisine Preference, and Seating Preference.
+    HISTORY OF CONVERSATION:
+    ${conversationContext}
     
-    Analyze the user's latest message: "${message}"
+    CURRENT USER MESSAGE: "${message}"
     
-    Return a JSON object ONLY. NO markdown formatting. Structure:
+    YOUR GOAL:
+    Compare the "HISTORY" with the "CURRENT USER MESSAGE". 
+    Extract the following details if they are mentioned anywhere in the conversation or the new message:
+    - Name
+    - Date (YYYY-MM-DD)
+    - Time (24h format)
+    - Number of Guests
+    - Cuisine Preference (Default: Any)
+    - Seating Preference (Indoor/Outdoor/Any)
+
+    IMPORTANT: 
+    - Do NOT ask for information that is already present in the HISTORY.
+    - If the user provided "tomorrow", calculate the date based on today's date.
+    - If the user says "2 tables", assume "Guests" is missing or ask "How many people per table?"
+    
+    Return a JSON object ONLY. NO markdown. Structure:
     {
-      "reply": "Your conversational response here. If you have the date, mention the weather.",
+      "reply": "Your natural response. Keep it brief. Only ask for missing fields.",
       "bookingDetails": {
-        "name": "extracted name or null",
-        "date": "extracted date (YYYY-MM-DD) or null",
-        "time": "extracted time (24h format) or null",
-        "guests": "extracted number or null",
-        "cuisine": "extracted cuisine or null",
-        "seating": "extracted seating (Indoor/Outdoor) or null"
+        "name": "extracted or null",
+        "date": "extracted or null",
+        "time": "extracted or null",
+        "guests": "extracted or null",
+        "cuisine": "extracted or null",
+        "seating": "extracted or null"
       },
-      "missingFields": ["list", "of", "fields", "still", "needed"],
-      "intent": "booking_request" or "cancellation" or "general_inquiry"
+      "intent": "booking_request" or "confirmation_request"
     }
     `;
 
@@ -118,6 +167,7 @@ app.post('/api/bookings', async (req, res) => {
 });
 
 // 2. Get All Bookings (GET)
+
 app.get('/api/bookings', async (req, res) => {
   try {
     // Fetch all documents from the bookings collection, sorted by newest first
@@ -129,12 +179,38 @@ app.get('/api/bookings', async (req, res) => {
   }
 });
 
+// Get Specific Booking (GET /:id)
+
+app.get('/api/bookings/:id', async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id);
+    if (!booking) return res.status(404).json({ error: "Booking not found" });
+    res.json(booking);
+  } catch (error) {
+    res.status(500).json({ error: "Error fetching booking" });
+  }
+});
+
+// Cancel Booking
+
+app.delete('/api/bookings/:id', async (req, res) => {
+  try {
+    const deletedBooking = await Booking.findByIdAndDelete(req.params.id);
+    if (!deletedBooking) return res.status(404).json({ error: "Booking not found" });
+    res.json({ message: "Booking cancelled successfully" });
+  } catch (error) {
+    res.status(500).json({ error: "Error cancelling booking" });
+  }
+});
+
 // Basic Health Check Route
+
 app.get('/', (req, res) => {
   res.send('Server is running with ES Modules!');
 });
 
 // Start Server
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

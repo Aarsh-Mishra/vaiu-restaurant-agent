@@ -1,0 +1,136 @@
+/* client/src/App.css */
+.app-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: #333;
+}
+
+header h1 {
+  text-align: center;
+  color: #2c3e50;
+  margin-bottom: 30px;
+}
+
+.main-content {
+  display: flex;
+  gap: 20px;
+  height: 80vh;
+}
+
+/* Booking Card Styles */
+.booking-card {
+  flex: 1;
+  background: #f8f9fa;
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  height: fit-content;
+}
+
+.detail-row {
+  margin: 10px 0;
+  font-size: 1.1em;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 5px;
+}
+
+.confirm-btn {
+  width: 100%;
+  margin-top: 20px;
+  padding: 12px;
+  background-color: #27ae60;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1.1em;
+  cursor: pointer;
+}
+
+.confirm-btn:hover {
+  background-color: #219150;
+}
+
+/* Chat Styles */
+.chat-container {
+  flex: 2;
+  display: flex;
+  flex-direction: column;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  overflow: hidden;
+  border: 1px solid #eee;
+}
+
+.messages-list {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.message {
+  padding: 12px 18px;
+  border-radius: 15px;
+  max-width: 70%;
+  line-height: 1.4;
+}
+
+.message.bot {
+  background-color: #f1f0f0;
+  align-self: flex-start;
+  border-bottom-left-radius: 2px;
+}
+
+.message.user {
+  background-color: #3498db;
+  color: white;
+  align-self: flex-end;
+  border-bottom-right-radius: 2px;
+}
+
+.controls {
+  padding: 20px;
+  border-top: 1px solid #eee;
+  text-align: center;
+  background: #fafafa;
+}
+
+.mic-button {
+  padding: 15px 30px;
+  font-size: 1.2em;
+  border-radius: 50px;
+  border: none;
+  background-color: #e74c3c;
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 10px rgba(231, 76, 60, 0.3);
+}
+
+.mic-button.active {
+  background-color: #c0392b;
+  animation: pulse 1.5s infinite;
+}
+
+.mic-button:disabled {
+  background-color: #95a5a6;
+  cursor: not-allowed;
+}
+
+.status-text {
+  margin-top: 10px;
+  color: #7f8c8d;
+  font-size: 0.9em;
+}
+
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7); }
+  70% { box-shadow: 0 0 0 10px rgba(231, 76, 60, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); }
+}
