@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import Booking from './models/booking.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import axios from 'axios';
+
 // Initialize environment variables
 dotenv.config();
 
@@ -27,30 +28,20 @@ const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
 const PORT = process.env.PORT || 5000;
 
-// (We mock this first to ensure logic works. Later we can connect a real API)
+// Weather Mock
 const getWeather = async (date) => {
   try {
-    // You can hardcode a city like 'Mumbai' or 'New York' for this assignment
     const city = 'Trichy'; 
-    const apiKey = process.env.OPENWEATHER_API_KEY; // Add this to your .env
-    
-    // Using OpenWeatherMap's 5-day forecast endpoint
+    const apiKey = process.env.OPENWEATHER_API_KEY; 
     const url = `https://api.openweathermap.org/data/2.5/forecast?q=${city}&appid=${apiKey}&units=metric`;
-    
     const response = await axios.get(url);
-    
-    // Simple logic: Find the forecast closest to the booking date/time
-    // (For simplicity, we just grab the first forecast item here, 
-    // but in a real app, you'd filter response.data.list by date)
     const forecast = response.data.list[0];
-    
     return {
       condition: forecast.weather[0].description,
       temp: forecast.main.temp
     };
   } catch (error) {
-    console.error("Weather API Error:", error.message);
-    return { condition: "unknown", temp: 25 }; // Fallback if API fails
+    return { condition: "unknown", temp: 25 };
   }
 };
 
@@ -58,7 +49,6 @@ const getWeather = async (date) => {
 app.post('/api/chat', async (req, res) => {
   try {
     const { message, history } = req.body;
-    console.log("User said:", message);
 
     // --- 1. Construct Context from History ---
     let conversationContext = "";
@@ -80,24 +70,17 @@ app.post('/api/chat', async (req, res) => {
     CURRENT USER MESSAGE: "${message}"
     
     YOUR GOAL:
-    You must collect ALL of the following information. Do not confirm the booking until you have them all:
-    1. Name
-    2. Date & Time
-    3. Number of Guests
-    4. Seating Preference (Indoor/Outdoor)
-    5. Cuisine Preference (e.g., Italian, Chinese, or "Any")
-    6. Special Requests (e.g., Birthday, Allergies, or "None")
+    Collect: Name, Date, Time, Guests, Seating (Indoor/Outdoor), Cuisine, Special Requests.
 
-    INSTRUCTIONS:
-    - Compare HISTORY and CURRENT MESSAGE to find these details.
-    - If any detail is missing, ASK the user for it politely.
-    - Do not ask for details already provided.
-    - Only set "intent" to "confirmation_request" when ALL fields are collected.
+    LOGIC:
+    1. Compare HISTORY and CURRENT MESSAGE to find details.
+    2. If a detail is missing, ASK for it politely.
+    3. If ALL details are present but user hasn't explicitly said "yes" or "confirm" to finalize, set intent to "confirmation_request".
+    4. If ALL details are present AND the user says "yes", "confirm", "go ahead", or similar to finalize, set intent to "confirmed".
     
     Return JSON ONLY:
     {
-      "reply": "Your response asking for missing details or confirming and don't repeat details already given.",
-
+      "reply": "Your conversational response.",
       "bookingDetails": {
         "name": "extracted or null",
         "date": "extracted (YYYY-MM-DD) or null",
@@ -107,7 +90,7 @@ app.post('/api/chat', async (req, res) => {
         "cuisine": "extracted or null",
         "specialRequests": "extracted or null"
       },
-      "intent": "booking_request" or "confirmation_request"
+      "intent": "booking_request" | "confirmation_request" | "confirmed"
     }
     `;
 
@@ -116,20 +99,22 @@ app.post('/api/chat', async (req, res) => {
     let text = response.text().replace(/```json/g, '').replace(/```/g, '').trim();
     const aiData = JSON.parse(text);
 
-    // --- 3. Smart Weather Logic (Fix Repetition) ---
+    // --- 3. Smart Weather Logic (Runs only once per session) ---
     if (aiData.bookingDetails.date) {
-        // Check if we already told the user the weather recently
-        const lastBotMessage = history?.filter(msg => msg.sender === 'bot').pop();
-        const weatherAlreadyDiscussed = lastBotMessage?.text.toLowerCase().includes('forecast');
+        // Check if bot has EVER mentioned weather or forecast in the history
+        const weatherAlreadyDiscussed = history?.some(msg => 
+            msg.sender === 'bot' && 
+            (msg.text.toLowerCase().includes('forecast') || msg.text.toLowerCase().includes('weather'))
+        );
         
-        // Only fetch/append weather if it's NOT in the last bot message
+        // Only run if date exists AND it hasn't been discussed yet
         if (!weatherAlreadyDiscussed) {
              const weather = await getWeather(aiData.bookingDetails.date);
-             // Append only if the AI didn't naturally include it in "reply"
+             
+             // Double check the AI didn't just generate a weather response right now
              if (!aiData.reply.toLowerCase().includes('weather') && !aiData.reply.toLowerCase().includes('forecast')) {
-                 aiData.reply += ` By the way, the forecast for that day is ${weather.condition}.`;
+                 aiData.reply += ` By the way, the forecast is ${weather.condition}.`;
                  
-                 // Add seating advice only if not already set
                  if (weather.condition.includes('rain') && !aiData.bookingDetails.seating) {
                      aiData.reply += " I recommend indoor seating.";
                  }
@@ -145,39 +130,29 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+// Create Booking
 app.post('/api/bookings', async (req, res) => {
   try {
     const bookingData = req.body;
-    
-    // Create a new document using your Mongoose model
     const newBooking = new Booking(bookingData);
-    
-    // Save it to the database
     await newBooking.save();
-    
-    console.log("New booking saved:", newBooking);
     res.status(201).json({ message: "Booking confirmed!", booking: newBooking });
   } catch (error) {
-    console.error("Error creating booking:", error);
     res.status(500).json({ error: "Failed to create booking" });
   }
 });
 
-// 2. Get All Bookings (GET)
-
+//Ql Booking
 app.get('/api/bookings', async (req, res) => {
   try {
-    // Fetch all documents from the bookings collection, sorted by newest first
     const bookings = await Booking.find().sort({ createdAt: -1 });
     res.json(bookings);
   } catch (error) {
-    console.error("Error fetching bookings:", error);
     res.status(500).json({ error: "Failed to fetch bookings" });
   }
 });
 
-// Get Specific Booking (GET /:id)
-
+// Get Specific Booking
 app.get('/api/bookings/:id', async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id);
@@ -189,7 +164,6 @@ app.get('/api/bookings/:id', async (req, res) => {
 });
 
 // Cancel Booking
-
 app.delete('/api/bookings/:id', async (req, res) => {
   try {
     const deletedBooking = await Booking.findByIdAndDelete(req.params.id);
@@ -200,13 +174,9 @@ app.delete('/api/bookings/:id', async (req, res) => {
   }
 });
 
-// Basic Health Check Route
-
 app.get('/', (req, res) => {
-  res.send('Server is running with ES Modules!');
+  res.send('Server is running!');
 });
-
-// Start Server
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
