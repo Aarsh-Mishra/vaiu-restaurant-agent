@@ -1,34 +1,7 @@
-/* client/src/index.css */
-:root {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  /* Minimalist Light Theme Vars */
-  --bg-color: #f5f7fa;
-  --card-bg: #ffffff;
-  --primary-color: #2c3e50;
-  --accent-color: #3498db;
-  --text-main: #2c3e50;
-  --text-light: #7f8c8d;
-  --border-color: #e1e4e8;
-  --success-color: #27ae60;
-  --danger-color: #e74c3c;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  background-color: var(--bg-color);
-  color: var(--text-main);
-}
-
-h1, h2, h3 {
-  margin: 0;
-  font-weight: 600;
-}
-
-button {
-  cursor: pointer;
+  @apply bg-gray-50 text-gray-800 antialiased;
 }
